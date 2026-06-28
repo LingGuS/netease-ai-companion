@@ -1,0 +1,10 @@
+# 环境变量 - 包含敏感 API Key，禁止提交
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/

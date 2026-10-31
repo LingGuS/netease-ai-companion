@@ -12,7 +12,7 @@ from prompts import SYSTEM_PROMPT
 from state import AgentState
 from tools.history_tools import get_user_play_records
 from tools.playlist_tools import get_playlist_detail, get_user_playlists
-from tools.play_tools import play_song
+from tools.play_tools import control_player, play_song
 from tools.profile_tools import analyze_my_taste
 from tools.recommend_tools import (
     get_daily_recommend_songs,
@@ -57,6 +57,7 @@ tools = [
     get_lyric,
     get_simi_song,
     # 播放类
+    control_player,
     play_song,
     # 画像类
     analyze_my_taste,

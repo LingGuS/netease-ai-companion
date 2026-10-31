@@ -141,15 +141,91 @@ def upsert_session(session_id: str) -> None:
         )
 
 
-def upsert_user(conn: psycopg.Connection, row: dict) -> None:
-    """登录成功后持久化用户与 cookie（长期存储，防频繁登录风控）。"""
+def get_session_title(conn: psycopg.Connection, session_id: str) -> str | None:
+    """读取会话标题（未生成过返回 None）。"""
+    row = conn.execute(
+        "SELECT title FROM sessions WHERE session_id = %s", (session_id,)
+    ).fetchone()
+    return (row or {}).get("title")
+
+
+def set_session_title(conn: psycopg.Connection, session_id: str, title: str) -> None:
+    """写入会话标题（只在尚未生成时写入，避免覆盖）。"""
+    conn.execute(
+        "UPDATE sessions SET title = %s WHERE session_id = %s AND title IS NULL",
+        (title, session_id),
+    )
+
+
+def list_sessions(limit: int = 50) -> list[dict]:
+    """前端历史对话列表：最近活跃的会话（标题为空由前端显示「新对话」）。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT session_id, title, last_active_at
+            FROM sessions
+            ORDER BY last_active_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+    for row in rows:
+        row["last_active_at"] = row["last_active_at"].isoformat()
+    return rows
+
+
+def set_session_queue(conn: psycopg.Connection, session_id: str, song_ids: list[int], current_index: int) -> None:
+    """整体替换会话播放队列并记录当前指向。
+
+    前端每次队列变更全量推送（≤100 首），delete+insert 天然幂等，无需处理位移。
+    """
+    conn.execute("DELETE FROM session_queue WHERE session_id = %s", (session_id,))
+    for pos, song_id in enumerate(song_ids):
+        conn.execute(
+            """
+            INSERT INTO session_queue (session_id, song_id, position)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (session_id, song_id) DO NOTHING
+            """,
+            (session_id, song_id, pos),
+        )
+    # upsert 而非裸 UPDATE：会话尚未登记（未发过消息）时也能存下指向；
+    # 只更新 queue_index，不动 last_active_at（避免播放行为重排历史列表）
     conn.execute(
         """
-        INSERT INTO users (netease_uid, nickname, vip_type, cookie)
-        VALUES (%(netease_uid)s, %(nickname)s, %(vip_type)s, %(cookie)s)
+        INSERT INTO sessions (session_id, queue_index)
+        VALUES (%s, %s)
+        ON CONFLICT (session_id) DO UPDATE SET queue_index = EXCLUDED.queue_index
+        """,
+        (session_id, current_index),
+    )
+
+
+def get_session_queue(conn: psycopg.Connection, session_id: str) -> tuple[list[int], int]:
+    """读取会话播放队列（按 position 有序）与当前指向。"""
+    rows = conn.execute(
+        "SELECT song_id FROM session_queue WHERE session_id = %s ORDER BY position",
+        (session_id,),
+    ).fetchall()
+    row = conn.execute(
+        "SELECT queue_index FROM sessions WHERE session_id = %s", (session_id,)
+    ).fetchone()
+    index = (row or {}).get("queue_index")
+    return [r["song_id"] for r in rows], (index if index is not None else -1)
+
+
+def upsert_user(conn: psycopg.Connection, row: dict) -> None:
+    """登录成功后持久化用户与 cookie（长期存储，防频繁登录风控）。"""
+    row = dict(row)
+    row.setdefault("avatar_url", None)
+    conn.execute(
+        """
+        INSERT INTO users (netease_uid, nickname, vip_type, cookie, avatar_url)
+        VALUES (%(netease_uid)s, %(nickname)s, %(vip_type)s, %(cookie)s, %(avatar_url)s)
         ON CONFLICT (netease_uid) DO UPDATE SET
             nickname = EXCLUDED.nickname, vip_type = EXCLUDED.vip_type,
-            cookie = EXCLUDED.cookie, last_seen_at = now()
+            cookie = EXCLUDED.cookie, avatar_url = EXCLUDED.avatar_url,
+            last_seen_at = now()
         """,
         row,
     )
@@ -159,7 +235,7 @@ def get_current_user(conn: psycopg.Connection) -> dict | None:
     """全局当前登录用户：最近持有有效 cookie 的账号。"""
     return conn.execute(
         """
-        SELECT id, netease_uid, nickname, vip_type, cookie
+        SELECT id, netease_uid, nickname, vip_type, cookie, avatar_url
         FROM users
         WHERE cookie IS NOT NULL AND cookie <> ''
         ORDER BY last_seen_at DESC

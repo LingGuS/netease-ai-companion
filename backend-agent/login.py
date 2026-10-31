@@ -109,11 +109,17 @@ def _save_login_user(cookie: str) -> dict:
         "nickname": profile.get("nickname"),
         "vip_type": profile.get("vipType", 0),
         "cookie": cookie,
+        "avatar_url": profile.get("avatarUrl"),
     }
     with db.get_conn() as conn:
         db.upsert_user(conn, row)
     logger.info("用户 %s(%s) 登录成功，cookie 已持久化", profile.get("nickname"), uid)
-    return {"netease_uid": uid, "nickname": profile.get("nickname"), "vip_type": row["vip_type"]}
+    return {
+        "netease_uid": uid,
+        "nickname": profile.get("nickname"),
+        "vip_type": row["vip_type"],
+        "avatar_url": row["avatar_url"],
+    }
 
 
 def get_current_user() -> dict | None:

@@ -8,3 +8,29 @@ __pycache__/
 
 # Node
 node_modules/
+
+# Milvus Lite 本地向量库（运行时生成，可由 rebuild_milvus.py 重建）
+data/
+
+# 后端日志（运行时生成）
+logs/
+
+# 含硬编码 API key 的个人文件（勿提交；建议去 DeepSeek 控制台作废该 key）
+homework.py
+
+# 测试文件与测试产物（按需求不推送）
+tests/
+pytest.ini
+*.doc
+*.docx
+
+# 测试期的 demo 目录
+docgen_demo/
+
+# 工具本地状态与调试日志
+.zcode/
+debug.log
+
+# 测试报告生成脚本（测试产物，不推送）
+scripts/generate_test_report.py
+scripts/report_cases.py
